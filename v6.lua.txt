@@ -1,0 +1,107 @@
+
+-- Tải OrionLib
+local success, OrionLib = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Orion/main/source.lua"))()
+end)
+if not success or not OrionLib then
+    error("Không thể tải Orion UI")
+end
+
+-- Tạo cửa sổ giữa màn hình, có thể kéo
+local Window = OrionLib:MakeWindow({
+    Name = "Bluez Hub | v4",
+    HidePremium = false,
+    SaveConfig = true,
+    ConfigFolder = "BluezHub",
+    IntroText = "Bluez Hub",
+})
+
+-- Tab Main
+local MainTab = Window:MakeTab({
+    Name = "Main",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+MainTab:AddButton({
+    Name = "Tăng tốc chạy",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
+    end
+})
+
+MainTab:AddButton({
+    Name = "Nhảy cao",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = 120
+    end
+})
+
+MainTab:AddButton({
+    Name = "Reset tốc & nhảy",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 16
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = 50
+    end
+})
+
+-- Hình tròn có thể kéo
+local ScreenGui = Instance.new("ScreenGui")
+local CircleFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local UserInputService = game:GetService("UserInputService")
+
+ScreenGui.Parent = game.CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+CircleFrame.Parent = ScreenGui
+CircleFrame.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+CircleFrame.Position = UDim2.new(0.5, -50, 0.5, -50)
+CircleFrame.Size = UDim2.new(0, 100, 0, 100)
+UICorner.CornerRadius = UDim.new(1, 0) -- Bo tròn hoàn toàn
+UICorner.Parent = CircleFrame
+
+-- Kéo hình tròn
+local dragging
+local dragInput
+local dragStart
+local startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    CircleFrame.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
+
+CircleFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = CircleFrame.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+CircleFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- Khởi động UI
+OrionLib:Init()
