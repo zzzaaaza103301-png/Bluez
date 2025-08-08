@@ -1,0 +1,392 @@
+-- Full self-contained v3 script (UI nhúng sẵn, no accents)
+-- Features: embedded UI (no external Orion), Splash, toggle button, Info, Common (noclip, fling, invisible, swim, wallstick),
+-- ESP (name + distance), Server Hop, Find Game, purple theme
+-- Designed to run on KRNL; Vietnamese without accents.
+
+-- CONFIG
+local CREATOR_TEXT = "Script duoc tao boi Thinh Nguyen"
+local TOGGLE_ASSET = "rbxassetid://89172507114012"
+local SPLASH_TIME = 3 -- seconds
+local THEME_COLOR = Color3.fromRGB(110, 45, 180) -- purple tone
+
+-- SERVICES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+
+-- Simple self-contained UI functions (minimal, avoids external libs)
+local function createScreenGui(name)
+    local sg = Instance.new("ScreenGui")
+    sg.Name = name or "ScreenGui"
+    sg.ResetOnSpawn = false
+    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    return sg
+end
+
+local function makeFrame(parent, props)
+    local f = Instance.new("Frame")
+    for k,v in pairs(props or {}) do f[k]=v end
+    Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
+    f.Parent = parent
+    return f
+end
+
+local function makeButton(parent, text, props)
+    local b = Instance.new("TextButton")
+    b.Text = text or "Button"
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 16
+    for k,v in pairs(props or {}) do b[k]=v end
+    b.Parent = parent
+    Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+    return b
+end
+
+-- Build UI (left menu + right content)
+local RootGui = createScreenGui("BluezRootGUI")
+local Main = makeFrame(RootGui, {Name="MainFrame", Size=UDim2.new(0,520,0,340), Position=UDim2.new(0.5,-260,0.5,-170), BackgroundColor3=Color3.fromRGB(35,20,60)})
+Main.AnchorPoint = Vector2.new(0.5,0.5)
+local Menu = makeFrame(Main, {Name="Menu", Size=UDim2.new(0,160,1,0), Position=UDim2.new(0,0,0,0), BackgroundColor3=Color3.fromRGB(50,30,80)})
+local Content = makeFrame(Main, {Name="Content", Size=UDim2.new(1,-160,1,0), Position=UDim2.new(0,160,0,0), BackgroundColor3=Color3.fromRGB(60,40,90)})
+
+Main.Visible = false
+
+-- Persistent toggle button
+local ToggleGui = createScreenGui("BluezToggleGui")
+local ToggleBtn = Instance.new("ImageButton")
+ToggleBtn.Name = "ToggleBtn"
+ToggleBtn.Size = UDim2.new(0,48,0,48)
+ToggleBtn.Position = UDim2.new(0,8,0.5,-24)
+ToggleBtn.AnchorPoint = Vector2.new(0,0.5)
+ToggleBtn.BackgroundTransparency = 1
+ToggleBtn.Image = TOGGLE_ASSET
+ToggleBtn.Parent = ToggleGui
+ToggleBtn.ZIndex = 50
+
+ToggleBtn.MouseButton1Click:Connect(function() Main.Visible = not Main.Visible end)
+
+-- Menu buttons
+local function addMenu(text, order)
+    local btn = makeButton(Menu, text, {Size=UDim2.new(1,-20,0,40), Position=UDim2.new(0,10,0,10 + (order-1)*48), BackgroundColor3=Color3.fromRGB(80,52,140), TextColor3=Color3.fromRGB(255,255,255)})
+    return btn
+end
+
+local btnInfo = addMenu("Thong Tin",1)
+local btnCommon = addMenu("Thong Thuong",2)
+local btnESP = addMenu("ESP",3)
+local btnServer = addMenu("Server Hop",4)
+local btnSearch = addMenu("Tim Game",5)
+
+-- Content helper
+local function clearContent()
+    for _,c in ipairs(Content:GetChildren()) do
+        if not (c:IsA("UICorner") or c:IsA("UIListLayout") or c:IsA("UISizeConstraint")) then pcall(function() c:Destroy() end) end
+    end
+end
+
+-- Info tab
+local function makeInfoTab()
+    clearContent()
+    local title = Instance.new("TextLabel", Content)
+    title.Size = UDim2.new(1,-20,0,36); title.Position = UDim2.new(0,10,0,10)
+    title.BackgroundTransparency = 1; title.Text="Thong Tin"; title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold; title.TextSize = 20
+
+    local avatar = Instance.new("ImageLabel", Content)
+    avatar.Size = UDim2.new(0,120,0,120); avatar.Position = UDim2.new(0,20,0,60); avatar.BackgroundTransparency = 1
+
+    local nameLbl = Instance.new("TextLabel", Content)
+    nameLbl.Size = UDim2.new(1,-160,0,30); nameLbl.Position = UDim2.new(0,160,0,70)
+    nameLbl.BackgroundTransparency = 1; nameLbl.Font = Enum.Font.GothamBold; nameLbl.TextSize=18
+    nameLbl.TextColor3 = Color3.fromRGB(255,255,255); nameLbl.Text = "Ten: "..(LocalPlayer.Name or "Khong xac dinh")
+
+    local joinLbl = Instance.new("TextLabel", Content)
+    joinLbl.Size = UDim2.new(1,-160,0,30); joinLbl.Position = UDim2.new(0,160,0,110)
+    joinLbl.BackgroundTransparency = 1; joinLbl.Font = Enum.Font.Gotham; joinLbl.TextSize=16
+    joinLbl.TextColor3 = Color3.fromRGB(200,200,200); joinLbl.Text = "Ngay tao: Dang tai..."
+
+    spawn(function()
+        local ok,thumb = pcall(function() return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420) end)
+        if ok and thumb then avatar.Image = thumb end
+    end)
+
+    spawn(function()
+        local ok,res = pcall(function() return HttpService:GetAsync("https://users.roblox.com/v1/users/"..tostring(LocalPlayer.UserId)) end)
+        if ok and res then
+            local suc, data = pcall(function() return HttpService:JSONDecode(res) end)
+            if suc and data and data.created then joinLbl.Text = "Ngay tao: "..string.sub(data.created,1,10); return end
+        end
+        joinLbl.Text = "Ngay tao: Khong lay duoc"
+    end)
+end
+
+-- Common tab functions (noclip, invisible, fling, swim, wallstick)
+local toggles = {noclip=false, invisible=false, fling=false, swim=false, wallstick=false}
+local connections = {}
+local function setNoclip(state)
+    toggles.noclip = state
+    if state then
+        connections.noclip = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if char then for _,p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.CanCollide=false end end end
+        end)
+    else
+        if connections.noclip then connections.noclip:Disconnect(); connections.noclip=nil end
+        local char = LocalPlayer.Character
+        if char then for _,p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide=true end end end
+    end
+end
+
+local function setInvisible(state)
+    toggles.invisible = state
+    local char = LocalPlayer.Character; if not char then return end
+    for _,p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name~="HumanoidRootPart" then p.LocalTransparencyModifier = state and 1 or 0
+        elseif p:IsA("Decal") then p.Transparency = state and 1 or 0 end
+    end
+end
+
+local flingConn
+local function setFling(state)
+    toggles.fling = state
+    if state then
+        local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            flingConn = root.Touched:Connect(function(hit)
+                local other = hit and hit.Parent
+                if other and other~=LocalPlayer.Character and other:FindFirstChild("Humanoid") then pcall(function() if root and root:IsA("BasePart") then root.Velocity = Vector3.new(0,200,0) end end) end
+            end)
+        end
+    else if flingConn then flingConn:Disconnect(); flingConn=nil end end
+end
+
+local swimBV
+local function setSwim(state)
+    toggles.swim = state
+    local char = LocalPlayer.Character
+    if state then
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+            swimBV = Instance.new("BodyVelocity"); swimBV.MaxForce = Vector3.new(0,400000,0); swimBV.Velocity = Vector3.new(0,50,0); swimBV.Parent = root
+        end
+    else if swimBV then swimBV:Destroy(); swimBV=nil end end
+end
+
+local wallConn
+local function setWallstick(state)
+    toggles.wallstick = state
+    if state then
+        wallConn = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local root = char.HumanoidRootPart
+                local ray = Ray.new(root.Position, root.CFrame.LookVector * 3)
+                local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                if hit then root.Anchored = true else root.Anchored = false end
+            end
+        end)
+    else if wallConn then wallConn:Disconnect(); wallConn=nil end
+        local char = LocalPlayer.Character if char and char:FindFirstChild("HumanoidRootPart") then char.HumanoidRootPart.Anchored = false end
+    end
+end
+
+local function makeCommonTab()
+    clearContent()
+    local title = Instance.new("TextLabel", Content); title.Size = UDim2.new(1,-20,0,36); title.Position = UDim2.new(0,10,0,10)
+    title.BackgroundTransparency = 1; title.Text = "Thong Thuong"; title.TextColor3 = Color3.fromRGB(255,255,255); title.Font = Enum.Font.GothamBold; title.TextSize = 20
+
+    local function addToggle(name, y, func)
+        local tbtn = Instance.new("TextButton", Content); tbtn.Size = UDim2.new(0,180,0,36); tbtn.Position = UDim2.new(0,20,0,60 + (y-1)*48)
+        tbtn.BackgroundColor3 = Color3.fromRGB(70,50,120); tbtn.TextColor3 = Color3.fromRGB(255,255,255); tbtn.Font = Enum.Font.GothamBold; tbtn.TextSize = 16
+        tbtn.Text = name.." : Tat"; Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,8)
+        tbtn.MouseButton1Click:Connect(function()
+            local on = string.find(tbtn.Text, "Tat") ~= nil
+            if on then tbtn.Text = name.." : Bat"; tbtn.BackgroundColor3 = Color3.fromRGB(120,60,200) else tbtn.Text = name.." : Tat"; tbtn.BackgroundColor3 = Color3.fromRGB(70,50,120) end
+            pcall(func, not on)
+        end)
+    end
+
+    addToggle("Noclip",1,setNoclip); addToggle("Fling",2,setFling); addToggle("Tang hinh",3,setInvisible); addToggle("Boi",4,setSwim); addToggle("Bam tuong",5,setWallstick)
+end
+
+-- ESP system
+local espState = {player=false, name=false, distance=false}
+local espGuis = {}
+
+local function createESPForPlayer(plr)
+    if plr==LocalPlayer or espGuis[plr] then return end
+    local char = plr.Character if not char then return end
+    local root = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart") if not root then return end
+    local bg = Instance.new("BillboardGui"); bg.Name="SimpleESP"; bg.Adornee=root; bg.Size=UDim2.new(0,200,0,40); bg.StudsOffset=Vector3.new(0,2.4,0); bg.AlwaysOnTop=true
+    local ok,err = pcall(function() bg.Parent = CoreGui end) if not ok then bg.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    local label = Instance.new("TextLabel", bg); label.BackgroundTransparency=1; label.Size=UDim2.new(1,0,1,0); label.Font=Enum.Font.GothamBold; label.TextSize=14; label.TextColor3=Color3.fromRGB(255,255,255); label.TextStrokeTransparency=0.6
+    espGuis[plr] = {gui=bg, label=label}
+end
+
+local function removeESPForPlayer(plr) if espGuis[plr] then pcall(function() espGuis[plr].gui:Destroy() end); espGuis[plr]=nil end end
+
+local function updateAllESP()
+    for plr,data in pairs(espGuis) do pcall(function()
+        if not plr.Character or not plr.Character.PrimaryPart then removeESPForPlayer(plr); return end
+        local label = data.label local textParts = {}
+        if espState.name then table.insert(textParts, plr.Name) end
+        if espState.distance and plr.Character and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (LocalPlayer.Character.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+            table.insert(textParts, string.format("%.0f m", dist))
+        end
+        label.Text = table.concat(textParts, " | ")
+    end) end
+end
+
+Players.PlayerAdded:Connect(function(p) if espState.player then createESPForPlayer(p) end end)
+Players.PlayerRemoving:Connect(function(p) removeESPForPlayer(p) end)
+
+spawn(function()
+    while true do
+        if espState.player or espState.name or espState.distance then
+            for _,plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and espState.player then if not espGuis[plr] then createESPForPlayer(plr) end
+                elseif not espState.player then if not espState.name and not espState.distance then removeESPForPlayer(plr) end end
+            end
+            updateAllESP()
+        else for p,_ in pairs(espGuis) do removeESPForPlayer(p) end end
+        wait(0.25)
+    end
+end)
+
+local function makeESPTab()
+    clearContent()
+    local title = Instance.new("TextLabel", Content); title.Size=UDim2.new(1,-20,0,36); title.Position=UDim2.new(0,10,0,10); title.BackgroundTransparency=1
+    title.Text="ESP"; title.TextColor3=Color3.fromRGB(255,255,255); title.Font=Enum.Font.GothamBold; title.TextSize=20
+    local function addESPToggle(name,key,y) local tbtn = Instance.new("TextButton", Content); tbtn.Size=UDim2.new(0,180,0,36); tbtn.Position=UDim2.new(0,20,0,60 + (y-1)*48)
+        tbtn.BackgroundColor3=Color3.fromRGB(70,50,120); tbtn.TextColor3=Color3.fromRGB(255,255,255); tbtn.Font=Enum.Font.GothamBold; tbtn.TextSize=16; tbtn.Text = name.." : Tat"; Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,8)
+        tbtn.MouseButton1Click:Connect(function() local on = string.find(tbtn.Text, "Tat") ~= nil if on then tbtn.Text = name.." : Bat"; tbtn.BackgroundColor3=Color3.fromRGB(120,60,200) else tbtn.Text = name.." : Tat"; tbtn.BackgroundColor3=Color3.fromRGB(70,50,120) end espState[key] = not on if key=="player" and espState.player then for _,plr in pairs(Players:GetPlayers()) do if plr~=LocalPlayer then createESPForPlayer(plr) end end end if not espState.player and not espState.name and not espState.distance then for p,_ in pairs(espGuis) do removeESPForPlayer(p) end end end) end
+    addESPToggle("ESP Player","player",1); addESPToggle("Show Name","name",2); addESPToggle("Show Dist","distance",3)
+end
+
+-- SERVER HOP
+local function fetchServers(placeId,cursor)
+    local url = "https://games.roblox.com/v1/games/"..tostring(placeId).."/servers/Public?sortOrder=Asc&limit=100"
+    if cursor and cursor~="" then url = url .. "&cursor=" .. tostring(cursor) end
+    local ok,res = pcall(function() return HttpService:GetAsync(url) end)
+    if not ok or not res then return nil end
+    local suc,data = pcall(function() return HttpService:JSONDecode(res) end)
+    if not suc or not data then return nil end
+    return data
+end
+
+local function serverHopRandom()
+    spawn(function()
+        local placeId = game.PlaceId
+        local data = fetchServers(placeId)
+        if not data then warn("Khong lay duoc danh sach server."); return end
+        local servers = data.data or data if not servers or #servers==0 then warn("Khong co server."); return end
+        local choices = {}
+        for _,s in ipairs(servers) do if s.id then table.insert(choices,s) end end
+        local pick = choices[math.random(1,#choices)]
+        if pick and pick.id then pcall(function() TeleportService:TeleportToPlaceInstance(placeId, tostring(pick.id), LocalPlayer) end) end
+    end)
+end
+
+local function serverHopLowPlayer()
+    spawn(function()
+        local placeId = game.PlaceId
+        local data = fetchServers(placeId)
+        if not data then warn("Khong lay duoc danh sach server."); return end
+        local servers = data.data or data
+        table.sort(servers, function(a,b) return (a.playing or 0) < (b.playing or 0) end)
+        local pick = nil for _,s in ipairs(servers) do if s.id then pick = s break end end
+        if pick and pick.id then pcall(function() TeleportService:TeleportToPlaceInstance(placeId, tostring(pick.id), LocalPlayer) end) end
+    end)
+end
+
+local function makeServerHopTab()
+    clearContent()
+    local title = Instance.new("TextLabel", Content); title.Size=UDim2.new(1,-20,0,36); title.Position=UDim2.new(0,10,0,10); title.BackgroundTransparency=1
+    title.Text="Server Hop"; title.TextColor3=Color3.fromRGB(255,255,255); title.Font=Enum.Font.GothamBold; title.TextSize=20
+    local randBtn = Instance.new("TextButton", Content); randBtn.Size=UDim2.new(0,200,0,40); randBtn.Position=UDim2.new(0,20,0,70); randBtn.Text="Hop random"; randBtn.Font=Enum.Font.GothamBold; randBtn.TextSize=18; randBtn.BackgroundColor3=Color3.fromRGB(80,52,140); randBtn.TextColor3=Color3.fromRGB(255,255,255); Instance.new("UICorner", randBtn).CornerRadius = UDim.new(0,8)
+    randBtn.MouseButton1Click:Connect(function() pcall(serverHopRandom) end)
+    local lowBtn = Instance.new("TextButton", Content); lowBtn.Size=UDim2.new(0,200,0,40); lowBtn.Position=UDim2.new(0,20,0,130); lowBtn.Text="Hop low player"; lowBtn.Font=Enum.Font.GothamBold; lowBtn.TextSize=18; lowBtn.BackgroundColor3=Color3.fromRGB(80,52,140); lowBtn.TextColor3=Color3.fromRGB(255,255,255); Instance.new("UICorner", lowBtn).CornerRadius = UDim.new(0,8)
+    lowBtn.MouseButton1Click:Connect(function() pcall(serverHopLowPlayer) end)
+    local info = Instance.new("TextLabel", Content); info.Size=UDim2.new(1,-40,0,40); info.Position=UDim2.new(0,20,0,190); info.BackgroundTransparency=1; info.TextColor3=Color3.fromRGB(200,200,200); info.Font=Enum.Font.Gotham; info.TextSize=14; info.Text="Note: Server Hop dung API chinh; co the khong hoat dong neu Roblox doi doi."; info.TextWrapped=true
+end
+
+-- FIND GAME
+local function trySearchGamesByName(name)
+    local q = tostring(name):gsub(" ", "%%20")
+    local url = "https://games.roblox.com/v1/games/list?keyword=" .. q .. "&limit=10"
+    local ok,res = pcall(function() return HttpService:GetAsync(url) end)
+    if not ok or not res then return nil end
+    local suc,data = pcall(function() return HttpService:JSONDecode(res) end)
+    if not suc or not data then return nil end
+    return data
+end
+
+local function makeSearchTab()
+    clearContent()
+    local title = Instance.new("TextLabel", Content); title.Size=UDim2.new(1,-20,0,36); title.Position=UDim2.new(0,10,0,10); title.BackgroundTransparency=1
+    title.Text="Tim Game"; title.TextColor3=Color3.fromRGB(255,255,255); title.Font=Enum.Font.GothamBold; title.TextSize=20
+    local input = Instance.new("TextBox", Content); input.Size=UDim2.new(0,300,0,36); input.Position=UDim2.new(0,20,0,70); input.PlaceholderText="Nhap ten game hoac PlaceId..."; input.Font=Enum.Font.Gotham; input.TextSize=16; input.Text=""; input.BackgroundColor3=Color3.fromRGB(70,50,120); input.TextColor3=Color3.fromRGB(255,255,255); Instance.new("UICorner", input).CornerRadius = UDim.new(0,6)
+    local searchBtn = Instance.new("TextButton", Content); searchBtn.Size=UDim2.new(0,140,0,36); searchBtn.Position=UDim2.new(0,340,0,70); searchBtn.Text="Tim"; searchBtn.Font=Enum.Font.GothamBold; searchBtn.TextSize=16; searchBtn.BackgroundColor3=Color3.fromRGB(90,60,160); searchBtn.TextColor3=Color3.fromRGB(255,255,255); Instance.new("UICorner", searchBtn).CornerRadius = UDim.new(0,6)
+    local resultHolder = Instance.new("Frame", Content); resultHolder.Size=UDim2.new(1,-40,0,160); resultHolder.Position=UDim2.new(0,20,0,120); resultHolder.BackgroundTransparency=1
+    local function clearResults() for _,c in ipairs(resultHolder:GetChildren()) do if not (c:IsA("UIListLayout") or c:IsA("UICorner")) then pcall(function() c:Destroy() end) end end end
+    local function showMessage(msg) clearResults(); local lbl = Instance.new("TextLabel", resultHolder); lbl.Size=UDim2.new(1,0,0,30); lbl.Position=UDim2.new(0,0,0,0); lbl.BackgroundTransparency=1; lbl.Text=msg; lbl.TextColor3=Color3.fromRGB(200,200,200); lbl.Font=Enum.Font.Gotham; lbl.TextSize=14 end
+    local function showSearchResults(data)
+        clearResults()
+        local entries = {}
+        if type(data)=="table" then
+            if data.games and type(data.games)=="table" then entries = data.games elseif data.data and type(data.data)=="table" then entries = data.data else for k,v in pairs(data) do if type(v)=="table" then table.insert(entries,v) end end end
+        end
+        if #entries==0 then showMessage("Khong tim thay ket qua. Thu nhap PlaceId de teleport."); return end
+        local y=0
+        for i,entry in ipairs(entries) do
+            local title = entry.name or entry.title or entry.placeName or "Khong ten"
+            local placeId = entry.id or entry.placeId or entry.rootPlaceId or entry.universeId
+            local btn = Instance.new("TextButton", resultHolder); btn.Size=UDim2.new(1,0,0,36); btn.Position=UDim2.new(0,0,0,y*44); btn.BackgroundColor3=Color3.fromRGB(70,50,120); btn.TextColor3=Color3.fromRGB(255,255,255); btn.Font=Enum.Font.Gotham; btn.TextSize=16; btn.Text = string.format("%s  (PlaceId: %s)", tostring(title), tostring(placeId or "N/A")); Instance.new("UICorner", btn).CornerRadius = UDim.new(0,6)
+            btn.MouseButton1Click:Connect(function() if tonumber(placeId) then pcall(function() TeleportService:Teleport(tonumber(placeId), LocalPlayer) end) else showMessage("Khong co PlaceId hop le cho muc nay.") end end)
+            y = y + 1
+        end
+    end
+    searchBtn.MouseButton1Click:Connect(function()
+        local text = input.Text:match("^%s*(.-)%s*$") or ""
+        if text=="" then showMessage("Vui long nhap ten game hoac PlaceId."); return end
+        if tonumber(text) then local pid = tonumber(text); showMessage("Teleport toi PlaceId: "..tostring(pid).." ..."); pcall(function() TeleportService:Teleport(pid, LocalPlayer) end); return end
+        showMessage("Dang tim...")
+        spawn(function() local data = trySearchGamesByName(text); if not data then showMessage("Khong tim thay hoac API khong ho tro.") return end; showSearchResults(data) end)
+    end)
+end
+
+-- Wire menu
+btnInfo.MouseButton1Click:Connect(makeInfoTab)
+btnCommon.MouseButton1Click:Connect(makeCommonTab)
+btnESP.MouseButton1Click:Connect(makeESPTab)
+btnServer.MouseButton1Click:Connect(makeServerHopTab)
+btnSearch.MouseButton1Click:Connect(makeSearchTab)
+
+-- Default tab
+makeInfoTab()
+
+-- Splash then menu stays hidden until toggle
+local function showSplashSimple(text, time)
+    time = time or SPLASH_TIME
+    local sg = createScreenGui("BluezSplash")
+    local bg = makeFrame(sg, {Size=UDim2.new(1,0,1,0), BackgroundTransparency=1})
+    local label = Instance.new("TextLabel", bg)
+    label.Size = UDim2.new(0.8,0,0,80); label.Position = UDim2.new(0.5,0,0.45,0); label.AnchorPoint = Vector2.new(0.5,0.5)
+    label.BackgroundTransparency = 0.5; label.BackgroundColor3 = Color3.fromRGB(0,0,0); label.TextColor3 = Color3.fromRGB(255,255,255); label.Font = Enum.Font.GothamBold; label.TextScaled = true; label.Text = text; Instance.new("UICorner", label).CornerRadius = UDim.new(0,10)
+    spawn(function() wait(time); for i=1,15 do label.TextTransparency = i/15; label.BackgroundTransparency = 0.5 + i*(0.5/15); wait(0.03) end; sg:Destroy() end)
+end
+
+showSplashSimple(CREATOR_TEXT, SPLASH_TIME)
+
+-- Keybind M to toggle
+pcall(function() UserInputService.InputBegan:Connect(function(input, gp) if gp then return end if input.KeyCode==Enum.KeyCode.M then Main.Visible = not Main.Visible end end) end)
+
+-- Reapply toggles on respawn
+Players.LocalPlayer.CharacterAdded:Connect(function(char) wait(0.5); if toggles.invisible then setInvisible(true) end; if toggles.swim then setSwim(true) end; if toggles.fling then setFling(true) end end)
+
+print("[v3] Loaded. Toggle menu via button or press M.")
