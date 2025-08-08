@@ -1,0 +1,152 @@
+-- Khoi tao UI
+local success, OrionLib = pcall(function()
+    return loadstring(game:HttpGet("https://raw.githubusercontent.com/shlexware/Orion/main/source.lua"))()
+end)
+if not success or not OrionLib then
+    error("Khong the tai Orion UI")
+end
+
+-- Tao cua so UI
+local Window = OrionLib:MakeWindow({
+    Name = "Bluez Hub | allv2",
+    HidePremium = false,
+    SaveConfig = true,
+    IntroText = "Bluez Hub",
+    ConfigFolder = "BluezHub",
+})
+
+-- Tab chinh
+local MainTab = Window:MakeTab({
+    Name = "Main",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+MainTab:AddButton({
+    Name = "Tang toc chay",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 50
+    end
+})
+
+MainTab:AddButton({
+    Name = "Nhay cao",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = 120
+    end
+})
+
+MainTab:AddButton({
+    Name = "Reset toc & nhay",
+    Callback = function()
+        game.Players.LocalPlayer.Character.Humanoid.WalkSpeed = 16
+        game.Players.LocalPlayer.Character.Humanoid.JumpPower = 50
+    end
+})
+
+-- Tab ESP
+local ESPTab = Window:MakeTab({
+    Name = "ESP",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local ESPEnabled = false
+
+ESPTab:AddToggle({
+    Name = "Bat ESP Player",
+    Default = false,
+    Callback = function(value)
+        ESPEnabled = value
+        while ESPEnabled do
+            for _, player in pairs(game.Players:GetPlayers()) do
+                if player ~= game.Players.LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                    if not player.Character.Head:FindFirstChild("ESP") then
+                        local Billboard = Instance.new("BillboardGui", player.Character.Head)
+                        Billboard.Name = "ESP"
+                        Billboard.Size = UDim2.new(0, 200, 0, 50)
+                        Billboard.AlwaysOnTop = true
+                        Billboard.StudsOffset = Vector3.new(0, 2, 0)
+                        local TextLabel = Instance.new("TextLabel", Billboard)
+                        TextLabel.Size = UDim2.new(1, 0, 1, 0)
+                        TextLabel.BackgroundTransparency = 1
+                        TextLabel.Text = player.Name
+                        TextLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                        TextLabel.TextStrokeTransparency = 0
+                    end
+                end
+            end
+            task.wait(1)
+        end
+        for _, player in pairs(game.Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("Head") and player.Character.Head:FindFirstChild("ESP") then
+                player.Character.Head.ESP:Destroy()
+            end
+        end
+    end
+})
+
+-- Tab Server
+local ServerTab = Window:MakeTab({
+    Name = "Server",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+ServerTab:AddButton({
+    Name = "Server Hop",
+    Callback = function()
+        local Http = game:GetService("HttpService")
+        local TPS = game:GetService("TeleportService")
+        local Api = "https://games.roblox.com/v1/games/" .. game.PlaceId .. "/servers/Public?sortOrder=Asc&limit=100"
+        local Servers = {}
+        local function ListServers(cursor)
+            local Raw = game:HttpGet(Api .. ((cursor and "&cursor="..cursor) or ""))
+            local Data = Http:JSONDecode(Raw)
+            for _, v in ipairs(Data.data) do
+                if v.playing < v.maxPlayers and v.id ~= game.JobId then
+                    table.insert(Servers, v.id)
+                end
+            end
+            if Data.nextPageCursor then
+                ListServers(Data.nextPageCursor)
+            end
+        end
+        ListServers()
+        if #Servers > 0 then
+            TPS:TeleportToPlaceInstance(game.PlaceId, Servers[math.random(1, #Servers)], game.Players.LocalPlayer)
+        end
+    end
+})
+
+-- Tab Game
+local GameTab = Window:MakeTab({
+    Name = "Game",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+GameTab:AddButton({
+    Name = "Tim Script Game",
+    Callback = function()
+        setclipboard("https://rscripts.net/search?q=" .. tostring(game.PlaceId))
+        OrionLib:MakeNotification({
+            Name = "Thong bao",
+            Content = "Da copy link tim script game vao clipboard!",
+            Image = "rbxassetid://4483345998",
+            Time = 5
+        })
+    end
+})
+
+-- Toggle an hien GUI
+local UIS = game:GetService("UserInputService")
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.RightControl then
+        OrionLib:Destroy()
+    end
+end)
+
+-- Khoi dong UI
+OrionLib:Init()
