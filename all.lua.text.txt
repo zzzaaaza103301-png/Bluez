@@ -1,0 +1,564 @@
+-- Full Orion UI script (LocalScript) by assistant for user "Thịnh Nguyễn"
+-- Features: Splash, toggle button (asset 89172507114012), Info, Thông Thường (noclip, fling, invisible, swim, wallstick),
+-- ESP (name + distance), Server Hop (random / low player), Tìm Game (search by name + teleport), purple theme, Orion attempt + fallback.
+
+-- CONFIG
+local CREATOR_TEXT = "Script được tạo bởi Thịnh Nguyễn"
+local TOGGLE_ASSET = "rbxassetid://89172507114012"
+local SPLASH_TIME = 3 -- seconds
+local THEME_COLOR = Color3.fromRGB(110, 45, 180) -- purple tone
+
+-- SERVICES
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+
+-- Utility safe pcall HttpGet
+local function http_get(url)
+    local ok, res = pcall(function() return game:HttpGet(url) end)
+    if ok then return res end
+    return nil
+end
+
+-- Try load Orion UI
+local OrionLib
+do
+    local orion_url = "https://raw.githubusercontent.com/shlexware/Orion/main/source" -- common hosting
+    local ok, src = pcall(function() return game:HttpGet(orion_url) end)
+    if ok and type(src)=="string" and #src>50 then
+        local f,err = loadstring(src)
+        if f then
+            local success,lib = pcall(f)
+            if success and lib then
+                OrionLib = lib
+            end
+        end
+    end
+end
+
+-- Fallback minimal UI creator (if Orion not loaded)
+local function makeFallbackUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "FallbackUI"
+    ScreenGui.ResetOnSpawn = false
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local function makeFrame(props)
+        local f = Instance.new("Frame")
+        for k,v in pairs(props or {}) do f[k]=v end
+        Instance.new("UICorner", f).CornerRadius = UDim.new(0,8)
+        return f
+    end
+    local function makeBtn(parent, text, pos)
+        local b = Instance.new("TextButton")
+        b.Size = UDim2.new(1, -20, 0, 36)
+        b.Position = pos or UDim2.new(0,10,0,10)
+        b.BackgroundColor3 = THEME_COLOR
+        b.TextColor3 = Color3.fromRGB(255,255,255)
+        b.Text = text
+        b.Font = Enum.Font.SourceSansBold
+        b.TextSize = 16
+        b.Parent = parent
+        Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
+        return b
+    end
+
+    -- Minimal layout: left menu + right content
+    local main = makeFrame{Size=UDim2.new(0,520,0,320), Position=UDim2.new(0.5,-260,0.5,-160), BackgroundColor3 = Color3.fromRGB(35,20,60)}
+    main.Parent = ScreenGui
+
+    local menu = makeFrame{Size=UDim2.new(0,160,1,0), Position=UDim2.new(0,0,0,0), BackgroundColor3 = Color3.fromRGB(50,30,80)}
+    menu.Parent = main
+
+    local content = makeFrame{Size=UDim2.new(1,-160,1,0), Position=UDim2.new(0,160,0,0), BackgroundColor3 = Color3.fromRGB(60,40,90)}
+    content.Parent = main
+
+    return {
+        ScreenGui = ScreenGui,
+        Main = main,
+        Menu = menu,
+        Content = content,
+        MakeButton = makeBtn
+    }
+end
+
+-- Create main UI (Orion or fallback)
+local UI = {}
+if OrionLib then
+    -- Create Orion window
+    local Orion = OrionLib
+    local Window = Orion:MakeWindow({Name = "Custom Script", HidePremium = true, SaveConfig = false, IntroText = false})
+    UI.platform = "orion"
+    UI.orion = Orion
+    UI.window = Window
+else
+    UI.platform = "fallback"
+    local f = makeFallbackUI()
+    UI.fallback = f
+end
+
+-- Splash (center big text then fade)
+local function showSplash(text, time)
+    time = time or SPLASH_TIME
+    local sg = Instance.new("ScreenGui")
+    sg.Name = "SplashGui"
+    sg.ResetOnSpawn = false
+    sg.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local bg = Instance.new("Frame", sg)
+    bg.Size = UDim2.new(1,0,1,0)
+    bg.BackgroundTransparency = 1
+
+    local label = Instance.new("TextLabel", bg)
+    label.Size = UDim2.new(0.8,0,0,80)
+    label.Position = UDim2.new(0.1,0,0.45,0)
+    label.AnchorPoint = Vector2.new(0.5,0.5)
+    label.BackgroundTransparency = 0.5
+    label.BackgroundColor3 = Color3.fromRGB(0,0,0)
+    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.Font = Enum.Font.GothamBold
+    label.TextScaled = true
+    label.Text = text
+    label.Parent = bg
+    Instance.new("UICorner", label).CornerRadius = UDim.new(0,10)
+
+    -- fade out after time
+    spawn(function()
+        wait(time)
+        for i=1,15 do
+            label.TextTransparency = i/15
+            label.BackgroundTransparency = 0.5 + i*(0.5/15)
+            wait(0.03)
+        end
+        sg:Destroy()
+    end)
+end
+
+-- Create persistent ScreenGui root (so ToggleButton can stay)
+local RootGui = Instance.new("ScreenGui")
+RootGui.Name = "CustomScriptRoot"
+RootGui.ResetOnSpawn = false
+RootGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Toggle button (always on top)
+local ToggleButton = Instance.new("ImageButton")
+ToggleButton.Name = "ToggleMenuButton"
+ToggleButton.Size = UDim2.new(0,50,0,50)
+ToggleButton.Position = UDim2.new(0,10,0.5,-25)
+ToggleButton.BackgroundTransparency = 1
+ToggleButton.Image = TOGGLE_ASSET
+ToggleButton.Parent = RootGui
+ToggleButton.ZIndex = 50
+ToggleButton.AutoButtonColor = true
+
+-- Container for the main window when using fallback
+local MainFrame, MenuFrame, ContentFrame
+if UI.platform == "fallback" then
+    MainFrame = UI.fallback.Main
+    MenuFrame = UI.fallback.Menu
+    ContentFrame = UI.fallback.Content
+    -- place inside RootGui instead of its own ScreenGui to ensure toggle always visible
+    MainFrame.Parent = RootGui
+else
+    -- using Orion: build a custom manual UI in RootGui to guarantee toggle stays above other UI
+    -- We'll still construct a Frame to behave similarly to fallback, but styled like purple Orion theme.
+    MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0,520,0,340)
+    MainFrame.Position = UDim2.new(0.5,-260,0.5,-170)
+    MainFrame.AnchorPoint = Vector2.new(0.5,0.5)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(35,20,60)
+    MainFrame.Parent = RootGui
+    Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0,12)
+    MenuFrame = Instance.new("Frame")
+    MenuFrame.Size = UDim2.new(0,160,1,0)
+    MenuFrame.BackgroundColor3 = Color3.fromRGB(50,30,80)
+    MenuFrame.Parent = MainFrame
+    Instance.new("UICorner", MenuFrame).CornerRadius = UDim.new(0,12)
+    ContentFrame = Instance.new("Frame")
+    ContentFrame.Size = UDim2.new(1,-160,1,0)
+    ContentFrame.Position = UDim2.new(0,160,0,0)
+    ContentFrame.BackgroundColor3 = Color3.fromRGB(60,40,90)
+    ContentFrame.Parent = MainFrame
+    Instance.new("UICorner", ContentFrame).CornerRadius = UDim.new(0,12)
+end
+
+MainFrame.Visible = false -- hidden until splash done
+
+-- Create left menu buttons: Thông Tin, Thông Thường, ESP, Server Hop, Tìm Game
+local menuButtons = {}
+local function createMenuButton(text, y)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1,-20,0,40)
+    btn.Position = UDim2.new(0,10,0,10 + (y-1)*48)
+    btn.BackgroundColor3 = Color3.fromRGB(80,52,140)
+    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 16
+    btn.Text = text
+    btn.Parent = MenuFrame
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+    return btn
+end
+
+menuButtons.info = createMenuButton("Thông Tin", 1)
+menuButtons.common = createMenuButton("Thông Thường", 2)
+menuButtons.esp = createMenuButton("ESP", 3)
+menuButtons.server = createMenuButton("Server Hop", 4)
+menuButtons.search = createMenuButton("Tìm Game", 5)
+
+-- Content helper clear
+local function clearContent()
+    for _,v in ipairs(ContentFrame:GetChildren()) do
+        if not (v:IsA("UICorner") or v:IsA("UIListLayout") or v:IsA("UISizeConstraint")) then
+            v:Destroy()
+        end
+    end
+end
+
+-- --------------------
+-- INFO TAB
+-- --------------------
+local function makeInfoTab()
+    clearContent()
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 36)
+    title.Position = UDim2.new(0, 10, 0, 10)
+    title.BackgroundTransparency = 1
+    title.Text = "Thông Tin"
+    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 20
+    title.Parent = ContentFrame
+
+    -- Avatar
+    local avatar = Instance.new("ImageLabel")
+    avatar.Size = UDim2.new(0,120,0,120)
+    avatar.Position = UDim2.new(0, 20, 0, 60)
+    avatar.BackgroundTransparency = 1
+    avatar.Parent = ContentFrame
+
+    -- Name Label
+    local nameLbl = Instance.new("TextLabel")
+    nameLbl.Size = UDim2.new(1,-160,0,30)
+    nameLbl.Position = UDim2.new(0,160,0,70)
+    nameLbl.BackgroundTransparency = 1
+    nameLbl.Font = Enum.Font.GothamBold
+    nameLbl.TextSize = 18
+    nameLbl.TextColor3 = Color3.fromRGB(255,255,255)
+    nameLbl.Text = "Tên nhân vật: " .. (LocalPlayer.Name or "Không xác định")
+    nameLbl.Parent = ContentFrame
+
+    -- Join date label
+    local joinLbl = Instance.new("TextLabel")
+    joinLbl.Size = UDim2.new(1,-160,0,30)
+    joinLbl.Position = UDim2.new(0,160,0,110)
+    joinLbl.BackgroundTransparency = 1
+    joinLbl.Font = Enum.Font.Gotham
+    joinLbl.TextSize = 16
+    joinLbl.TextColor3 = Color3.fromRGB(200,200,200)
+    joinLbl.Text = "Ngày tạo: Đang tải..."
+    joinLbl.Parent = ContentFrame
+
+    -- Get avatar
+    spawn(function()
+        local ok,thumb = pcall(function()
+            return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+        end)
+        if ok and thumb then
+            avatar.Image = thumb
+        end
+    end)
+
+    -- Get created date from users API
+    spawn(function()
+        local ok, res = pcall(function()
+            return HttpService:GetAsync("https://users.roblox.com/v1/users/"..tostring(LocalPlayer.UserId))
+        end)
+        if ok then
+            local decoded = pcall(function() return HttpService:JSONDecode(res) end)
+            if decoded then
+                local data = HttpService:JSONDecode(res)
+                if data.created then
+                    local d = string.sub(data.created,1,10)
+                    joinLbl.Text = "Ngày tạo: " .. d
+                    return
+                end
+            end
+        end
+        joinLbl.Text = "Ngày tạo: Không lấy được"
+    end)
+end
+
+-- --------------------
+-- THÔNG THƯỜNG TAB (noclip, fling, invisible, swim, wallstick)
+-- --------------------
+local toggles = {
+    noclip = false,
+    invisible = false,
+    fling = false,
+    swim = false,
+    wallstick = false
+}
+local connections = {}
+
+-- Noclip: set CanCollide false for character parts every frame
+local function setNoclip(state)
+    toggles.noclip = state
+    if state then
+        connections.noclip = RunService.Stepped:Connect(function()
+            local char = LocalPlayer.Character
+            if char then
+                for _,part in ipairs(char:GetDescendants()) do
+                    if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+    else
+        if connections.noclip then connections.noclip:Disconnect(); connections.noclip=nil end
+        local char = LocalPlayer.Character
+        if char then
+            for _,part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end
+end
+
+-- Invisible: set local character transparency
+local function setInvisible(state)
+    toggles.invisible = state
+    local char = LocalPlayer.Character
+    if not char then return end
+    for _,p in ipairs(char:GetDescendants()) do
+        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then
+            p.LocalTransparencyModifier = state and 1 or 0
+        elseif p:IsA("Decal") then
+            p.Transparency = state and 1 or 0
+        end
+    end
+end
+
+-- Fling: apply a big velocity impulse while touching a player (simple approach)
+local flingConnection
+local function setFling(state)
+    toggles.fling = state
+    if state then
+        local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if root then
+            flingConnection = root.Touched:Connect(function(hit)
+                local other = hit and hit.Parent
+                if other and other ~= LocalPlayer.Character and other:FindFirstChild("Humanoid") then
+                    pcall(function()
+                        if root and root:IsA("BasePart") then
+                            root.Velocity = Vector3.new(0,200,0)
+                        end
+                    end)
+                end
+            end)
+        end
+    else
+        if flingConnection then flingConnection:Disconnect(); flingConnection=nil end
+    end
+end
+
+-- Swim (bơi đi) -> simulate upward swim by applying BodyVelocity while holding toggle
+local swimBV
+local function setSwim(state)
+    toggles.swim = state
+    local char = LocalPlayer.Character
+    if state then
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local root = char.HumanoidRootPart
+            swimBV = Instance.new("BodyVelocity")
+            swimBV.MaxForce = Vector3.new(0,400000,0)
+            swimBV.Velocity = Vector3.new(0,50,0)
+            swimBV.Parent = root
+        end
+    else
+        if swimBV then swimBV:Destroy(); swimBV=nil end
+    end
+end
+
+-- Wallstick: set HumanoidRootPart.Anchored while near wall (simple sticky)
+local wallConn
+local function setWallstick(state)
+    toggles.wallstick = state
+    if state then
+        wallConn = RunService.Heartbeat:Connect(function()
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local root = char.HumanoidRootPart
+                local ray = Ray.new(root.Position, root.CFrame.LookVector * 3)
+                local hit = workspace:FindPartOnRayWithIgnoreList(ray, {char})
+                if hit then
+                    root.Anchored = true
+                else
+                    root.Anchored = false
+                end
+            end
+        end)
+    else
+        if wallConn then wallConn:Disconnect(); wallConn=nil end
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            char.HumanoidRootPart.Anchored = false
+        end
+    end
+end
+
+local function makeCommonTab()
+    clearContent()
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,-20,0,36)
+    title.Position = UDim2.new(0,10,0,10)
+    title.BackgroundTransparency = 1
+    title.Text = "Thông Thường"
+    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 20
+    title.Parent = ContentFrame
+
+    local function addToggle(name, y, func)
+        local tbtn = Instance.new("TextButton")
+        tbtn.Size = UDim2.new(0,180,0,36)
+        tbtn.Position = UDim2.new(0,20,0,60 + (y-1)*48)
+        tbtn.BackgroundColor3 = Color3.fromRGB(70,50,120)
+        tbtn.TextColor3 = Color3.fromRGB(255,255,255)
+        tbtn.Font = Enum.Font.GothamBold
+        tbtn.TextSize = 16
+        tbtn.Text = name .. " : Tắt"
+        tbtn.Parent = ContentFrame
+        Instance.new("UICorner", tbtn).CornerRadius = UDim.new(0,8)
+        tbtn.MouseButton1Click:Connect(function()
+            local on = string.find(tbtn.Text, "Tắt") ~= nil
+            if on then
+                tbtn.Text = name .. " : Bật"
+                tbtn.BackgroundColor3 = Color3.fromRGB(120,60,200)
+            else
+                tbtn.Text = name .. " : Tắt"
+                tbtn.BackgroundColor3 = Color3.fromRGB(70,50,120)
+            end
+            pcall(func, not on)
+        end)
+    end
+
+    addToggle("Noclip", 1, setNoclip)
+    addToggle("Fling", 2, setFling)
+    addToggle("Tàng hình", 3, setInvisible)
+    addToggle("Bơi đi", 4, setSwim)
+    addToggle("Bám tường", 5, setWallstick)
+end
+
+-- --------------------
+-- ESP TAB (name + distance)
+-- --------------------
+local espState = {player = false, name = false, distance = false}
+local espGuis = {} -- map player -> billboard
+
+local function createESPForPlayer(plr)
+    if plr == LocalPlayer or espGuis[plr] then return end
+    local char = plr.Character
+    if not char then return end
+    local root = char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+    if not root then return end
+
+    local bg = Instance.new("BillboardGui")
+    bg.Name = "SimpleESP"
+    bg.Adornee = root
+    bg.Size = UDim2.new(0,200,0,40)
+    bg.StudsOffset = Vector3.new(0,2.4,0)
+    bg.AlwaysOnTop = true
+    bg.Parent = CoreGui -- Use CoreGui to survive some UI layers; if blocked, will set Parent to RootGui
+    -- Label inside
+    local label = Instance.new("TextLabel", bg)
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.new(1,0,1,0)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 14
+    label.TextColor3 = Color3.fromRGB(255,255,255)
+    label.TextStrokeTransparency = 0.6
+
+    espGuis[plr] = {gui = bg, label = label}
+end
+
+local function removeESPForPlayer(plr)
+    if espGuis[plr] then
+        pcall(function() espGuis[plr].gui:Destroy() end)
+        espGuis[plr] = nil
+    end
+end
+
+local function updateAllESP()
+    for plr,data in pairs(espGuis) do
+        local ok, _ = pcall(function()
+            if not plr.Character or not plr.Character.PrimaryPart then
+                removeESPForPlayer(plr); return
+            end
+            local label = data.label
+            local textParts = {}
+            if espState.name then table.insert(textParts, plr.Name) end
+            if espState.distance and plr.Character and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("HumanoidRootPart") then
+                local dist = (LocalPlayer.Character.HumanoidRootPart.Position - plr.Character.HumanoidRootPart.Position).Magnitude
+                table.insert(textParts, string.format("%.0f m", dist))
+            end
+            label.Text = table.concat(textParts, " | ")
+        end)
+    end
+end
+
+-- Update esp when players join/leave/character added
+Players.PlayerAdded:Connect(function(p)
+    if espState.player then createESPForPlayer(p) end
+end)
+Players.PlayerRemoving:Connect(function(p)
+    removeESPForPlayer(p)
+end)
+
+-- periodic update
+spawn(function()
+    while true do
+        if espState.player or espState.name or espState.distance then
+            -- ensure all players have guis when player esp enabled
+            for _,plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and espState.player then
+                    if not espGuis[plr] then createESPForPlayer(plr) end
+                elseif not espState.player then
+                    -- if player esp off, but name/distance on, still show (we treat player toggle as overall)
+                    if not espState.name and not espState.distance then removeESPForPlayer(plr) end
+                end
+            end
+            updateAllESP()
+        else
+            -- destroy all esp guis
+            for p,_ in pairs(espGuis) do removeESPForPlayer(p) end
+        end
+        wait(0.25)
+    end
+end)
+
+local function makeESPTab()
+    clearContent()
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1,-20,0,36)
+    title.Position = UDim2.new(0,10,0,10)
+    title.BackgroundTransparency = 1
+    title.Text = "ESP"
+    title.TextColor3 = Color3.fromRGB(255,255,255)
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 20
+    title.Parent = ContentFrame
+
+    local function addESPToggle(name, key)
+        local tbtn = Instance.new("TextButton")
+        tbtn.Size = UDim2.new(0,180,0,36)
+        tbtn.Position = UDim2.new(0,20,0,60 + (#(ContentFrame:GetChildren())-1)*48)
+        tbtn.BackgroundColor3 = Color3.fromRGB(70,50,120)
+        tbtn.TextColor3 = Color3.fromRGB(255,255,255)
+        tbtn.Font = Enum.Font.GothamBold
+        tbtn
