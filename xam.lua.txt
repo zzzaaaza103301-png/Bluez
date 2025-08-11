@@ -1,0 +1,223 @@
+-- Script UI + 4 chức năng cho Roblox (chạy trên KRNL)
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")
+local mouse = player:GetMouse()
+
+-- Tạo ScreenGui
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ThinhScriptGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+-- Tạo Frame chính
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 220, 0, 280)
+mainFrame.Position = UDim2.new(0, 10, 0.3, 0)
+mainFrame.BackgroundColor3 = Color3.fromRGB(128, 0, 128) -- tím đậm
+mainFrame.BackgroundTransparency = 0.3 -- 70% trong suốt
+mainFrame.BorderSizePixel = 0
+mainFrame.Parent = screenGui
+mainFrame.Active = true
+mainFrame.Draggable = true
+
+-- Tiêu đề
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.Text = "Thinh Script"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.Parent = mainFrame
+
+-- Hàm tạo nút bật tắt chức năng
+local function createToggleButton(text, posY)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 200, 0, 40)
+    btn.Position = UDim2.new(0, 10, 0, posY)
+    btn.BackgroundColor3 = Color3.fromRGB(128, 0, 128)
+    btn.BackgroundTransparency = 0.3
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 18
+    btn.Text = text .. ": OFF"
+    btn.AutoButtonColor = true
+    btn.Parent = mainFrame
+
+    btn.MouseEnter:Connect(function()
+        btn.BackgroundTransparency = 0.1
+    end)
+    btn.MouseLeave:Connect(function()
+        btn.BackgroundTransparency = 0.3
+    end)
+
+    return btn
+end
+
+-- Các trạng thái chức năng
+local noClipEnabled = false
+local touchFlyEnabled = false
+local invisCloneEnabled = false
+local wallStickEnabled = false
+
+-- Tạo nút cho từng chức năng
+local noClipBtn = createToggleButton("No Clip", 50)
+local touchFlyBtn = createToggleButton("Touch Fly", 100)
+local invisCloneBtn = createToggleButton("Invis Clone", 150)
+local wallStickBtn = createToggleButton("Wall Stick", 200)
+
+-- Code chức năng No Clip
+local function setNoClip(active)
+    if active then
+        -- Bật no clip: bỏ collision của các part trong character
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    else
+        -- Tắt no clip: bật collision lại
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = true
+            end
+        end
+    end
+end
+
+-- Code chức năng Touch Fly
+local flyForce = Vector3.new(0, 100, 0) -- lực bay lên
+local function onTouched(otherPart)
+    if not touchFlyEnabled then return end
+    local otherChar = otherPart.Parent
+    if otherChar and otherChar:FindFirstChild("HumanoidRootPart") and otherChar ~= character then
+        local humanoidRoot = otherChar:FindFirstChild("HumanoidRootPart")
+        if humanoidRoot then
+            humanoidRoot.Velocity = Vector3.new(0, 100, 0) -- đẩy bay lên
+        end
+    end
+end
+
+-- Code chức năng Invis Clone (tàng hình + clone)
+local clone
+local camera = workspace.CurrentCamera
+local originalCamCFrame
+
+local function setInvisClone(active)
+    if active then
+        -- Ẩn character thật
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") or part:IsA("Decal") then
+                part.Transparency = 1
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end
+
+        -- Tạo clone nếu chưa có
+        if not clone then
+            clone = character:Clone()
+            clone.Parent = workspace
+            clone.Name = "CloneForInvis"
+            -- Đặt clone ở vị trí khác (ví dụ +10 bên X)
+            clone:SetPrimaryPartCFrame(hrp.CFrame * CFrame.new(10, 0, 0))
+            -- Clone không hoạt động (tắt scripts)
+            for _, v in pairs(clone:GetDescendants()) do
+                if v:IsA("Script") or v:IsA("LocalScript") then
+                    v.Disabled = true
+                end
+            end
+        end
+
+        -- Giữ camera tại vị trí hiện tại (không di chuyển theo nhân vật)
+        originalCamCFrame = camera.CFrame
+        camera.CameraType = Enum.CameraType.Scriptable
+        camera.CFrame = originalCamCFrame
+
+        -- Cập nhật camera mỗi frame giữ nguyên vị trí
+        RunService:BindToRenderStep("HoldCamera", Enum.RenderPriority.Camera.Value + 1, function()
+            camera.CFrame = originalCamCFrame
+        end)
+    else
+        -- Hiện character trở lại
+        for _, part in pairs(character:GetChildren()) do
+            if part:IsA("BasePart") or part:IsA("Decal") then
+                part.Transparency = 0
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+
+        -- Xóa clone
+        if clone then
+            clone:Destroy()
+            clone = nil
+        end
+
+        -- Trả lại camera về chế độ mặc định
+        RunService:UnbindFromRenderStep("HoldCamera")
+        camera.CameraType = Enum.CameraType.Custom
+    end
+end
+
+-- Code chức năng Wall Stick (bám tường)
+local function wallStick()
+    if not wallStickEnabled then return end
+    local rayParams = RaycastParams.new()
+    rayParams.FilterDescendantsInstances = {character}
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+    local direction = hrp.CFrame.LookVector
+    local ray = workspace:Raycast(hrp.Position, direction * 2, rayParams)
+    if ray then
+        -- Nếu gần tường, "dính" vào tường bằng cách giảm tốc độ ra xa tường
+        local velocity = hrp.AssemblyLinearVelocity
+        local normal = ray.Normal
+        local pushBack = normal * velocity:Dot(normal)
+        hrp.AssemblyLinearVelocity = velocity - pushBack
+    end
+end
+
+-- Nút bấm
+noClipBtn.MouseButton1Click:Connect(function()
+    noClipEnabled = not noClipEnabled
+    setNoClip(noClipEnabled)
+    noClipBtn.Text = "No Clip: " .. (noClipEnabled and "ON" or "OFF")
+end)
+
+touchFlyBtn.MouseButton1Click:Connect(function()
+    touchFlyEnabled = not touchFlyEnabled
+    touchFlyBtn.Text = "Touch Fly: " .. (touchFlyEnabled and "ON" or "OFF")
+end)
+
+invisCloneBtn.MouseButton1Click:Connect(function()
+    invisCloneEnabled = not invisCloneEnabled
+    setInvisClone(invisCloneEnabled)
+    invisCloneBtn.Text = "Invis Clone: " .. (invisCloneEnabled and "ON" or "OFF")
+end)
+
+wallStickBtn.MouseButton1Click:Connect(function()
+    wallStickEnabled = not wallStickEnabled
+    wallStickBtn.Text = "Wall Stick: " .. (wallStickEnabled and "ON" or "OFF")
+end)
+
+-- Kết nối sự kiện chạm cho Touch Fly
+for _, part in pairs(character:GetChildren()) do
+    if part:IsA("BasePart") then
+        part.Touched:Connect(onTouched)
+    end
+end
+
+-- RunService loop cho Wall Stick
+RunService.Heartbeat:Connect(function()
+    if wallStickEnabled then
+        wallStick()
+    end
+end)
