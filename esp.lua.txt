@@ -1,0 +1,92 @@
+-- ESP Script (By: Thịnh) - Không UI, bật là có ESP
+-- Gắn highlight + tên xanh cho tất cả người chơi trừ bạn
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Hiện thông báo "By: Thịnh"
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local function ShowMessage()
+    local msg = Instance.new("TextLabel")
+    msg.Size = UDim2.new(1, 0, 0, 50)
+    msg.Position = UDim2.new(0, 0, 0, 0)
+    msg.BackgroundTransparency = 1
+    msg.Text = "🔰 ESP By: Thịnh 🔰"
+    msg.TextColor3 = Color3.fromRGB(0, 255, 0)
+    msg.TextStrokeTransparency = 0
+    msg.Font = Enum.Font.SourceSansBold
+    msg.TextScaled = true
+    msg.Parent = PlayerGui
+    task.delay(3, function() msg:Destroy() end)
+end
+ShowMessage()
+
+-- Hàm gắn ESP vào 1 nhân vật
+local function AddESP(player)
+    local function SetupCharacter(char)
+        if not char then return end
+
+        -- Xóa highlight cũ nếu có
+        if char:FindFirstChild("Highlight") then
+            char.Highlight:Destroy()
+        end
+
+        -- Highlight viền xanh
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "Highlight"
+        highlight.FillColor = Color3.fromRGB(0, 255, 0)
+        highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+        highlight.FillTransparency = 0.7
+        highlight.OutlineTransparency = 0
+        highlight.Adornee = char
+        highlight.Parent = char
+
+        -- Thêm tên trên đầu
+        local head = char:FindFirstChild("Head")
+        if head and not head:FindFirstChild("ESPName") then
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "ESPName"
+            billboard.Adornee = head
+            billboard.Size = UDim2.new(0, 200, 0, 50)
+            billboard.StudsOffset = Vector3.new(0, 2, 0)
+            billboard.AlwaysOnTop = true
+            billboard.Parent = head
+
+            local textLabel = Instance.new("TextLabel")
+            textLabel.Size = UDim2.new(1, 0, 1, 0)
+            textLabel.BackgroundTransparency = 1
+            textLabel.Text = player.Name
+            textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            textLabel.Font = Enum.Font.SourceSansBold
+            textLabel.TextSize = 20
+            textLabel.Parent = billboard
+        end
+    end
+
+    -- Nếu nhân vật có sẵn thì ESP ngay
+    if player.Character then
+        SetupCharacter(player.Character)
+    end
+
+    -- Khi spawn lại
+    player.CharacterAdded:Connect(function(char)
+        char:WaitForChild("Head", 5)
+        SetupCharacter(char)
+    end)
+end
+
+-- Gắn ESP cho mọi người chơi trừ bản thân
+for _, p in ipairs(Players:GetPlayers()) do
+    if p ~= LocalPlayer then
+        AddESP(p)
+    end
+end
+
+-- Khi người mới vào
+Players.PlayerAdded:Connect(function(p)
+    if p ~= LocalPlayer then
+        AddESP(p)
+    end
+end)
+
+print("✅ ESP By: Thịnh Loaded")
