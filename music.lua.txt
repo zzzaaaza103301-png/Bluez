@@ -1,0 +1,97 @@
+-- Script nghe nhạc có UI nhập ID và nút bật/tắt
+-- Chạy script này bằng executor hoặc để vào LocalScript trong game bạn làm
+
+-- Tạo ScreenGui
+local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = playerGui
+
+-- Frame chính
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 150)
+frame.Position = UDim2.new(0.5, -125, 0.5, -75)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.Active = true
+frame.Draggable = true
+frame.Parent = screenGui
+
+-- Tiêu đề
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+title.Text = "🎵 Music Player"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+title.Parent = frame
+
+-- Ô nhập ID nhạc
+local textBox = Instance.new("TextBox")
+textBox.Size = UDim2.new(1, -20, 0, 30)
+textBox.Position = UDim2.new(0, 10, 0, 40)
+textBox.PlaceholderText = "Nhập ID nhạc Roblox"
+textBox.Text = ""
+textBox.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+textBox.TextColor3 = Color3.fromRGB(0, 0, 0)
+textBox.ClearTextOnFocus = false
+textBox.Parent = frame
+
+-- Nút bật nhạc
+local playButton = Instance.new("TextButton")
+playButton.Size = UDim2.new(0.45, 0, 0, 30)
+playButton.Position = UDim2.new(0.05, 0, 0, 90)
+playButton.Text = "▶️ Bật Nhạc"
+playButton.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+playButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+playButton.Font = Enum.Font.SourceSansBold
+playButton.TextSize = 18
+playButton.Parent = frame
+
+-- Nút tắt nhạc
+local stopButton = Instance.new("TextButton")
+stopButton.Size = UDim2.new(0.45, 0, 0, 30)
+stopButton.Position = UDim2.new(0.5, 0, 0, 90)
+stopButton.Text = "⏹️ Tắt Nhạc"
+stopButton.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+stopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+stopButton.Font = Enum.Font.SourceSansBold
+stopButton.TextSize = 18
+stopButton.Parent = frame
+
+-- Biến lưu nhạc
+local currentSound = nil
+
+-- Hàm bật nhạc
+local function playMusic()
+    local musicId = textBox.Text
+    if musicId ~= "" then
+        if currentSound then
+            currentSound:Stop()
+            currentSound:Destroy()
+        end
+        currentSound = Instance.new("Sound")
+        currentSound.SoundId = "rbxassetid://"..musicId
+        currentSound.Volume = 5
+        currentSound.Looped = true
+        currentSound.Parent = workspace
+        currentSound:Play()
+        print("🎶 Đang phát nhạc với ID: "..musicId)
+    else
+        warn("⚠️ Bạn chưa nhập ID nhạc!")
+    end
+end
+
+-- Hàm tắt nhạc
+local function stopMusic()
+    if currentSound then
+        currentSound:Stop()
+        currentSound:Destroy()
+        currentSound = nil
+        print("⏹️ Nhạc đã tắt")
+    end
+end
+
+-- Gán sự kiện nút
+playButton.MouseButton1Click:Connect(playMusic)
+stopButton.MouseButton1Click:Connect(stopMusic)
